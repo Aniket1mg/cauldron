@@ -196,6 +196,9 @@ class PostgresStore:
         Yields:
             existing db connection pool
         """
+        if not cls._replica_connection_params:
+            cls._replica_connection_params = cls._connection_params
+
         if len(cls._connection_params) < 5:
             raise ConnectionError('Please call SQLStore.connect before calling this method')
         if not cls._pool:
