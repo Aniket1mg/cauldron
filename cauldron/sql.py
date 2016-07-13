@@ -29,7 +29,7 @@ def dict_cursor_parameterized(use_replica=False):
 
         @wraps(func)
         def wrapper(cls, *args, **kwargs):
-            with (yield from cls.get_cursor(_CursorType.DICT, use_replica=use_replica)) as c:
+            with (yield from cls.get_cursor(_CursorType.DICT, use_replica=kwargs.get('use_replica', use_replica))) as c:
                 return (yield from func(cls, c, *args, **kwargs))
 
         return wrapper
@@ -53,7 +53,7 @@ def cursor_parameterized(use_replica=False):
 
         @wraps(func)
         def wrapper(cls, *args, **kwargs):
-            with (yield from cls.get_cursor(use_replica=use_replica)) as c:
+            with (yield from cls.get_cursor(use_replica=kwargs.get('use_replica', use_replica))) as c:
                 return (yield from func(cls, c, *args, **kwargs))
 
         return wrapper
@@ -77,7 +77,7 @@ def nt_cursor_parameterized(use_replica=False):
 
         @wraps(func)
         def wrapper(cls, *args, **kwargs):
-            with (yield from cls.get_cursor(_CursorType.NAMEDTUPLE, use_replica=use_replica)) as c:
+            with (yield from cls.get_cursor(_CursorType.NAMEDTUPLE, use_replica=kwargs.get('use_replica', use_replica))) as c:
                 return (yield from func(cls, c, *args, **kwargs))
 
         return wrapper
@@ -244,7 +244,7 @@ class PostgresStore:
     @classmethod
     @coroutine
     @cursor_parameterized(use_replica=True)
-    def count(cls, cur, table:str, where_keys: list=None):
+    def count(cls, cur, table:str, where_keys: list=None, use_replica=True):
         """
         gives the number of records in the table
 
@@ -270,7 +270,7 @@ class PostgresStore:
     @classmethod
     @coroutine
     @nt_cursor_parameterized(use_replica=False)
-    def insert(cls, cur, table: str, values: dict):
+    def insert(cls, cur, table: str, values: dict, use_replica=False):
         """
         Creates an insert statement with only chosen fields
 
@@ -291,7 +291,7 @@ class PostgresStore:
     @classmethod
     @coroutine
     @nt_cursor_parameterized(use_replica=False)
-    def update(cls, cur, table: str, values: dict, where_keys: list) -> tuple:
+    def update(cls, cur, table: str, values: dict, where_keys: list, use_replica=False) -> tuple:
         """
         Creates an update query with only chosen fields
         Supports only a single field where clause
@@ -329,7 +329,7 @@ class PostgresStore:
     @classmethod
     @coroutine
     @cursor_parameterized(use_replica=False)
-    def delete(cls, cur, table: str, where_keys: list):
+    def delete(cls, cur, table: str, where_keys: list, use_replica=False):
         """
         Creates a delete query with where keys
         Supports multiple where clause with and or or both
@@ -354,7 +354,7 @@ class PostgresStore:
     @coroutine
     @nt_cursor_parameterized(use_replica=True)
     def select(cls, cur, table: str, order_by: str, columns: list=None, where_keys: list=None, limit=100,
-               offset=0):
+               offset=0, use_replica=True):
         """
         Creates a select query for selective columns with where keys
         Supports multiple where claus with and or or both
@@ -400,7 +400,7 @@ class PostgresStore:
     @classmethod
     @coroutine
     @nt_cursor_parameterized(use_replica=False)
-    def raw_sql(cls, cur, query: str, values: tuple):
+    def raw_sql(cls, cur, query: str, values: tuple, use_replica=False):
         """
         Run a raw sql query
 
