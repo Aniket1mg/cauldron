@@ -97,8 +97,9 @@ def transaction(func):
             try:
                 yield from c.execute('BEGIN')
                 result = (yield from func(cls, c, *args, **kwargs))
-            except Exception:
+            except Exception as e:
                 yield from c.execute('ROLLBACK')
+                raise e
             else:
                 yield from c.execute('COMMIT')
                 return result
@@ -388,6 +389,21 @@ class PostgresStore:
         """
         yield from cur.execute(query, values)
         return (yield from cur.fetchall())
+
+    @classmethod
+    @coroutine
+    @transaction
+    def transaction_queries(cls, cur, queries: list, values: list):
+        """
+        Run a list of SQL queries as a Transaction
+
+        Args:
+            queries : list of query strings to be executed
+            values : list of tuple of values to be used with the query at corresponding index
+
+        """
+        for query, value in zip(queries, values):
+            yield from cur.execute(query, value)
 
 
 @contextmanager
