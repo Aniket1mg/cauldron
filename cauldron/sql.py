@@ -370,7 +370,7 @@ class PostgresStore:
     @classmethod
     @coroutine
     @nt_cursor(use_replica=False)
-    def select(cls, cur, table: str, order_by: str, columns: list=None, where_keys: list=None, limit=100,
+    def select(cls, cur, table: str, order_by: str=None, columns: list=None, where_keys: list=None, limit=100,
                offset=0, use_replica=False):
         """
         Creates a select query for selective columns with where keys
