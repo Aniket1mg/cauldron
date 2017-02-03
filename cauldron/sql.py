@@ -236,7 +236,7 @@ class PostgresStore:
         yield from asyncio.sleep(cls._refresh_period * 60)
         logging.getLogger().info("Clearing unused replica DB connections")
         yield from cls._replica_pool.clear()
-        asyncio.async(cls._periodic_cleansing())
+        asyncio.async(cls._replica_periodic_cleansing())
 
 
     @classmethod
