@@ -136,6 +136,7 @@ class PostgresStore:
     _PLACEHOLDER = ' %s,'
     _COMMA = ', '
     _pool_pending = asyncio.Semaphore(1)
+    _replica_pool_pending = asyncio.Semaphore(1)
     _refresh_period = 30
 
     @classmethod
@@ -201,16 +202,18 @@ class PostgresStore:
         if len(cls._connection_params) < 5:
             raise ConnectionError('Please call SQLStore.connect before calling this method')
 
-        if not cls._replica_connection_params:
-            cls._replica_connection_params = cls._connection_params
-
         if not cls._pool:
             with (yield from cls._pool_pending):
                 if not cls._pool:
                     cls._pool = yield from create_pool(**cls._connection_params)
-                if not cls._replica_pool:
-                    cls._replica_pool = yield from create_pool(**cls._replica_connection_params)
-                asyncio.async(cls._periodic_cleansing())
+                    asyncio.async(cls._periodic_cleansing())
+
+        if cls._replica_connection_params:
+            if not cls._replica_pool:
+                with (yield from cls._replica_pool_pending):
+                    if not cls._replica_pool:
+                        cls._replica_pool = yield from create_pool(**cls._replica_connection_params)
+                        asyncio.async(cls._replica_periodic_cleansing())
         return cls._pool, cls._replica_pool
 
     @classmethod
@@ -222,6 +225,16 @@ class PostgresStore:
         yield from asyncio.sleep(cls._refresh_period * 60)
         logging.getLogger().info("Clearing unused DB connections")
         yield from cls._pool.clear()
+        asyncio.async(cls._periodic_cleansing())
+
+    @classmethod
+    @coroutine
+    def _replica_periodic_cleansing(cls):
+        """
+        Periodically cleanses idle connections in pool
+        """
+        yield from asyncio.sleep(cls._refresh_period * 60)
+        logging.getLogger().info("Clearing unused replica DB connections")
         yield from cls._replica_pool.clear()
         asyncio.async(cls._periodic_cleansing())
 
