@@ -4,6 +4,7 @@ from functools import wraps
 from enum import Enum
 import aiopg
 import asyncio
+import logging
 
 from aiopg import create_pool, Pool, Cursor
 
@@ -116,10 +117,14 @@ class PostgresStore:
     _use_pool = None
     _insert_string = "insert into {} ({}) values ({}) returning *;"
     _update_string = "update {} set ({}) = ({}) where ({}) returning *;"
-    _select_all_string_with_condition = "select * from {} where ({}) order by {} limit {} offset {};"
-    _select_all_string = "select * from {} order by {} limit {} offset {};"
-    _select_selective_column = "select {} from {} order by {} limit {} offset {};"
-    _select_selective_column_with_condition = "select {} from {} where ({}) order by {} limit {} offset {};"
+    _select_all_string_with_condition = "select * from {} where ({}) limit {} offset {};"
+    _select_all_string = "select * from {} limit {} offset {};"
+    _select_selective_column = "select {} from {} limit {} offset {};"
+    _select_selective_column_with_condition = "select {} from {} where ({}) limit {} offset {};"
+    _select_all_string_with_condition_and_order_by = "select * from {} where ({}) order by {} limit {} offset {};"
+    _select_all_string_with_order_by = "select * from {} order by {} limit {} offset {};"
+    _select_selective_column_with_order_by = "select {} from {} order by {} limit {} offset {};"
+    _select_selective_column_with_condition_and_order_by = "select {} from {} where ({}) order by {} limit {} offset {};"
     _delete_query = "delete from {} where ({});"
     _count_query = "select count(*) from {};"
     _count_query_where = "select count(*) from {} where {};"
@@ -131,10 +136,12 @@ class PostgresStore:
     _PLACEHOLDER = ' %s,'
     _COMMA = ', '
     _pool_pending = asyncio.Semaphore(1)
+    _refresh_period = 30
 
     @classmethod
     def connect(cls, database: str, user: str, password: str, host: str, port: int, *, use_pool: bool=True,
-                enable_ssl: bool=False, minsize=1, maxsize=10, keepalives_idle=5, keepalives_interval=4, echo=False,
+                enable_ssl: bool=False, minsize=1, maxsize=30, keepalives_idle=5, keepalives_interval=4, echo=False,
+                refresh_period=_refresh_period,
                 **kwargs):
         """
         Sets connection parameters
@@ -154,11 +161,11 @@ class PostgresStore:
         cls._connection_params['echo'] = echo
         cls._connection_params.update(kwargs)
         cls._use_pool = use_pool
+        cls._refresh_period = refresh_period
 
     @classmethod
-    def connect_replica(cls, database: str, user: str, password: str, host: str, port: int, *, use_pool: bool = True,
-                enable_ssl: bool = False, minsize=1, maxsize=10, keepalives_idle=5, keepalives_interval=4, echo=False,
-                **kwargs):
+    def connect_replica(cls, database: str, user: str, password: str, host: str, port: int, *,
+                enable_ssl: bool = False, minsize=1, maxsize=30, keepalives_idle=5, keepalives_interval=4, echo=False, **kwargs):
         """
         Sets connection parameters
         For more information on the parameters that is accepts,
@@ -176,7 +183,6 @@ class PostgresStore:
         cls._replica_connection_params['keepalives_interval'] = keepalives_interval
         cls._replica_connection_params['echo'] = echo
         cls._replica_connection_params.update(kwargs)
-        cls._use_pool = use_pool
 
     @classmethod
     def use_pool(cls, pool: Pool):
@@ -204,7 +210,21 @@ class PostgresStore:
                     cls._pool = yield from create_pool(**cls._connection_params)
                 if not cls._replica_pool:
                     cls._replica_pool = yield from create_pool(**cls._replica_connection_params)
+                asyncio.async(cls._periodic_cleansing())
         return cls._pool, cls._replica_pool
+
+    @classmethod
+    @coroutine
+    def _periodic_cleansing(cls):
+        """
+        Periodically cleanses idle connections in pool
+        """
+        yield from asyncio.sleep(cls._refresh_period * 60)
+        logging.getLogger().info("Clearing unused DB connections")
+        yield from cls._pool.clear()
+        yield from cls._replica_pool.clear()
+        asyncio.async(cls._periodic_cleansing())
+
 
     @classmethod
     @coroutine
@@ -376,19 +396,32 @@ class PostgresStore:
             columns_string = cls._COMMA.join(columns)
             if where_keys:
                 where_clause, values = cls._get_where_clause_with_values(where_keys)
-                query = cls._select_selective_column_with_condition.format(columns_string, table, where_clause,
-                                                                           order_by, limit, offset)
+                if order_by:
+                    query = cls._select_selective_column_with_condition_and_order_by.format(columns_string, table, where_clause,
+                                                                               order_by, limit, offset)
+                else:
+                    query = cls._select_selective_column_with_condition.format(columns_string, table, where_clause,
+                                                                                limit, offset)
                 q, t = query, values
             else:
-                query = cls._select_selective_column.format(columns_string, table, order_by, limit, offset)
+                if order_by:
+                    query = cls._select_selective_column_with_order_by.format(columns_string, table, order_by, limit, offset)
+                else:
+                    query = cls._select_selective_column.format(columns_string, table, limit, offset)
                 q, t = query, ()
         else:
             if where_keys:
                 where_clause, values = cls._get_where_clause_with_values(where_keys)
-                query = cls._select_all_string_with_condition.format(table, where_clause, order_by, limit, offset)
+                if order_by:
+                    query = cls._select_all_string_with_condition_and_order_by.format(table, where_clause, order_by, limit, offset)
+                else:
+                    query = cls._select_all_string_with_condition.format(table, where_clause, limit, offset)
                 q, t = query, values
             else:
-                query = cls._select_all_string.format(table, order_by, limit, offset)
+                if order_by:
+                    query = cls._select_all_string_with_order_by.format(table, order_by, limit, offset)
+                else:
+                    query = cls._select_all_string.format(table, limit, offset)
                 q, t = query, ()
 
         yield from cur.execute(q, t)
