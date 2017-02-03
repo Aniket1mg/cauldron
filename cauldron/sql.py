@@ -76,7 +76,7 @@ def nt_cursor(use_replica=False):
     def nt_cursor_helper(func):
         @wraps(func)
         def wrapper(cls, *args, **kwargs):
-            with (yield from cls.get_cursor(use_replica=kwargs.get('use_replica', use_replica))) as c:
+            with (yield from cls.get_cursor(cursor_type=_CursorType.NAMEDTUPLE ,use_replica=kwargs.get('use_replica', use_replica))) as c:
                 return (yield from func(cls, c, *args, **kwargs))
         return wrapper
     return nt_cursor_helper
