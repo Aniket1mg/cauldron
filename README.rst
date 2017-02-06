@@ -75,6 +75,16 @@ Using Cauldron:
         def test_select(cls):
             rows = yield from cls.raw_query('select 1')
             print(rows)
+            
+
+Multiple DB connection support
+------
+* Prerequisites:
+Connect to replica by calling : connect_replica of PostgresStore
+
+* Usage:
+The method for which you want to use the replica DB : Add argument use_replica with value = True (by default False)
+
 
 Other Examples
 ^^^^^^^^^^^^^^
