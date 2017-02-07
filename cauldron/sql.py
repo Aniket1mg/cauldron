@@ -37,7 +37,7 @@ def dict_cursor(func):
     return wrapper
 
 
-def cursor(use_replica=False):
+def cursor(func):
     """
     Decorator that provides a cursor to the calling function
 
@@ -51,16 +51,15 @@ def cursor(use_replica=False):
         A client-side cursor
     """
 
-    def cursor_helper(func):
-        @wraps(func)
-        def wrapper(cls, *args, **kwargs):
-            with (yield from cls.get_cursor(use_replica=kwargs.get('use_replica', use_replica))) as c:
-                return (yield from func(cls, c, *args, **kwargs))
-        return wrapper
-    return cursor_helper
+    @wraps(func)
+    def wrapper(cls, *args, **kwargs):
+        with (yield from cls.get_cursor()) as c:
+            return (yield from func(cls, c, *args, **kwargs))
+
+    return wrapper
 
 
-def nt_cursor(use_replica=False):
+def nt_cursor(func):
     """
     Decorator that provides a namedtuple cursor to the calling function
 
@@ -73,13 +72,73 @@ def nt_cursor(use_replica=False):
     Yields:
         A client-side namedtuple cursor
     """
-    def nt_cursor_helper(func):
+    @wraps(func)
+    def wrapper(cls, *args, **kwargs):
+        with (yield from cls.get_cursor(cursor_type=_CursorType.NAMEDTUPLE )) as c:
+            return (yield from func(cls, c, *args, **kwargs))
+
+    return wrapper
+
+def dict_cursor_parameterized(use_replica=False):
+    def dict_cursor(func):
+        """
+        Decorator that provides a dictionary cursor to the calling function
+        Adds the cursor as the second argument to the calling functions
+        Requires that the function being decorated is an instance of a class or object
+        that yields a cursor from a get_cursor(cursor_type=CursorType.DICT) coroutine or provides such an object
+        as the first argument in its signature
+        Yields:
+            A client-side dictionary cursor
+        """
+
         @wraps(func)
         def wrapper(cls, *args, **kwargs):
-            with (yield from cls.get_cursor(cursor_type=_CursorType.NAMEDTUPLE ,use_replica=kwargs.get('use_replica', use_replica))) as c:
+            with (yield from cls.get_cursor(_CursorType.DICT, use_replica=kwargs.get('use_replica', use_replica))) as c:
                 return (yield from func(cls, c, *args, **kwargs))
+
         return wrapper
-    return nt_cursor_helper
+    return dict_cursor
+
+def cursor_parameterized(use_replica=False):
+    def cursor(func):
+        """
+        Decorator that provides a cursor to the calling function
+        Adds the cursor as the second argument to the calling functions
+        Requires that the function being decorated is an instance of a class or object
+        that yields a cursor from a get_cursor() coroutine or provides such an object
+        as the first argument in its signature
+        Yields:
+            A client-side cursor
+        """
+
+        @wraps(func)
+        def wrapper(cls, *args, **kwargs):
+            with (yield from cls.get_cursor(use_replica=kwargs.get('use_replica', use_replica))) as c:
+                return (yield from func(cls, c, *args, **kwargs))
+
+        return wrapper
+    return cursor
+
+def nt_cursor_parameterized(use_replica=False):
+    def nt_cursor(func):
+        """
+        Decorator that provides a namedtuple cursor to the calling function
+        Adds the cursor as the second argument to the calling functions
+        Requires that the function being decorated is an instance of a class or object
+        that yields a cursor from a get_cursor(cursor_type=CursorType.NAMEDTUPLE) coroutine or provides such an object
+        as the first argument in its signature
+        Yields:
+            A client-side namedtuple cursor
+        """
+
+        @wraps(func)
+        def wrapper(cls, *args, **kwargs):
+            with (yield from cls.get_cursor(_CursorType.NAMEDTUPLE, use_replica=kwargs.get('use_replica', use_replica))) as c:
+                return (yield from func(cls, c, *args, **kwargs))
+
+        return wrapper
+    return nt_cursor
+
 
 def transaction(func):
     """
@@ -273,7 +332,7 @@ class PostgresStore:
 
     @classmethod
     @coroutine
-    @cursor(use_replica=False)
+    @cursor_parameterized(use_replica=False)
     def count(cls, cur, table:str, where_keys: list=None, use_replica=False):
         """
         gives the number of records in the table
@@ -299,7 +358,7 @@ class PostgresStore:
 
     @classmethod
     @coroutine
-    @nt_cursor(use_replica=False)
+    @nt_cursor_parameterized(use_replica=False)
     def insert(cls, cur, table: str, values: dict, use_replica=False):
         """
         Creates an insert statement with only chosen fields
@@ -320,7 +379,7 @@ class PostgresStore:
 
     @classmethod
     @coroutine
-    @nt_cursor(use_replica=False)
+    @nt_cursor_parameterized(use_replica=False)
     def update(cls, cur, table: str, values: dict, where_keys: list, use_replica=False) -> tuple:
         """
         Creates an update query with only chosen fields
@@ -358,7 +417,7 @@ class PostgresStore:
 
     @classmethod
     @coroutine
-    @cursor(use_replica=False)
+    @cursor_parameterized(use_replica=False)
     def delete(cls, cur, table: str, where_keys: list, use_replica=False):
         """
         Creates a delete query with where keys
@@ -382,7 +441,7 @@ class PostgresStore:
 
     @classmethod
     @coroutine
-    @nt_cursor(use_replica=False)
+    @nt_cursor_parameterized(use_replica=False)
     def select(cls, cur, table: str, order_by: str=None, columns: list=None, where_keys: list=None, limit=100,
                offset=0, use_replica=False):
         """
@@ -442,7 +501,7 @@ class PostgresStore:
 
     @classmethod
     @coroutine
-    @nt_cursor(use_replica=False)
+    @nt_cursor_parameterized(use_replica=False)
     def raw_sql(cls, cur, query: str, values: tuple, use_replica=False):
         """
         Run a raw sql query
