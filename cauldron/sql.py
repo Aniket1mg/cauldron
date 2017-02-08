@@ -267,13 +267,24 @@ class PostgresStore:
                     cls._pool = yield from create_pool(**cls._connection_params)
                     asyncio.async(cls._periodic_cleansing())
 
-        if cls._replica_connection_params:
-            if not cls._replica_pool:
-                with (yield from cls._replica_pool_pending):
-                    if not cls._replica_pool:
-                        cls._replica_pool = yield from create_pool(**cls._replica_connection_params)
-                        asyncio.async(cls._replica_periodic_cleansing())
-        return cls._pool, cls._replica_pool
+        return cls._pool
+
+    @classmethod
+    @coroutine
+    def get_replica_pool(cls) -> tuple:
+        """
+        Yields:
+            existing replica db connection pool
+        """
+        if not cls._replica_connection_params:
+            raise ConnectionError('Please call SQLStore.connect_replica before calling this method')
+
+        if not cls._replica_pool:
+            with (yield from cls._replica_pool_pending):
+                if not cls._replica_pool:
+                    cls._replica_pool = yield from create_pool(**cls._replica_connection_params)
+                    asyncio.async(cls._replica_periodic_cleansing())
+        return cls._replica_pool
 
     @classmethod
     @coroutine
@@ -307,11 +318,10 @@ class PostgresStore:
         """
         _cur = None
         if cls._use_pool:
-            _pools = yield from cls.get_pool()
             if use_replica:
-                _connection_source = _pools[1]
+                _connection_source = yield from cls.get_replica_pool()
             else:
-                _connection_source = _pools[0]
+                _connection_source = yield from cls.get_pool()
         else:
             if use_replica:
                 _connection_source = yield from aiopg.connect(echo=False, **cls._replica_connection_params)
