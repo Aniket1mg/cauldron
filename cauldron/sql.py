@@ -253,7 +253,7 @@ class PostgresStore:
 
     @classmethod
     @coroutine
-    def get_pool(cls) -> tuple:
+    def get_pool(cls) -> Pool:
         """
         Yields:
             existing db connection pool
@@ -271,7 +271,7 @@ class PostgresStore:
 
     @classmethod
     @coroutine
-    def get_replica_pool(cls) -> tuple:
+    def get_replica_pool(cls) -> Pool:
         """
         Yields:
             existing replica db connection pool
