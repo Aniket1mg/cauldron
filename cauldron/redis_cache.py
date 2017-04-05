@@ -198,7 +198,7 @@ class RedisCache:
                 if result:
                     return json.loads(result)
                 result = yield from func(*args, **kwargs)
-                yield from RedisCache.set_key(digest_key, json.dumps(result), name_space, expire_time)
+                asyncio.async(RedisCache.set_key(digest_key, json.dumps(result), name_space, expire_time))
                 return result
             return apply_cache
         return wrapped
