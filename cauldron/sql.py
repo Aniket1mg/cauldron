@@ -11,8 +11,6 @@ from aiopg import create_pool, Pool, Cursor
 import psycopg2
 
 _CursorType = Enum('CursorType', 'PLAIN, DICT, NAMEDTUPLE')
-logger = logging.getLogger()
-import time
 
 def dict_cursor(func):
     """
@@ -56,14 +54,8 @@ def cursor(func):
         _conn_obj = yield from (yield from cls.get_pool()).acquire()
         if not hasattr(_conn_obj, '_linked_cursor'):
             _conn_obj._linked_cursor = yield from _conn_obj.cursor()
-        logger.debug('Time taken in aquiring cursor: {} PoolUsed: {} PoolFree {}'.format(
-            round(float(round(float(time.time()), 2) - t0), 2),
-            len(cls.pool()._used),
-            len(cls.pool()._free)))
         try:
             return (yield from func(cls, _conn_obj._linked_cursor, *args, **kwargs))
-        except Exception:
-            logger.error('Error in runnig query')
         finally:
             if cls.pool():
                 yield from cls.pool().release(_conn_obj)
@@ -89,18 +81,11 @@ def nt_cursor(func):
 
     @wraps(func)
     def wrapper(cls, *args, **kwargs):
-        t0 = round(float(time.time()), 2)
         _conn_obj = yield from (yield from cls.get_pool()).acquire()
         if not hasattr(_conn_obj, '_linked_nt_cursor'):
             _conn_obj._linked_nt_cursor = yield from _conn_obj.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor)
-        logger.debug('Time taken in aquiring nt_cursor: {} PoolUsed: {} PoolFree {}'.format(
-            round(float(round(float(time.time()), 2) - t0), 2),
-            len(cls.pool()._used),
-            len(cls.pool()._free)))
         try:
             return (yield from func(cls, _conn_obj._linked_nt_cursor, *args, **kwargs))
-        except Exception:
-            logger.error('Error in runnig query')
         finally:
             if cls.pool():
                 yield from cls.pool().release(_conn_obj)
