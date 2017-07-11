@@ -50,7 +50,6 @@ def cursor(func):
 
     @wraps(func)
     def wrapper(cls, *args, **kwargs):
-        t0 = round(float(time.time()), 2)
         _conn_obj = yield from (yield from cls.get_pool()).acquire()
         if not hasattr(_conn_obj, '_linked_cursor'):
             _conn_obj._linked_cursor = yield from _conn_obj.cursor()
