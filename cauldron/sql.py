@@ -421,6 +421,12 @@ class PostgresStore:
 
     @classmethod
     @coroutine
+    @cursor
+    def mogrify(cls, cur, query, parameters=None):
+        return cur.mogrify(query, parameters=parameters)
+
+    @classmethod
+    @coroutine
     @nt_cursor
     def raw_sql(cls, cur, query: str, values: tuple):
         """
