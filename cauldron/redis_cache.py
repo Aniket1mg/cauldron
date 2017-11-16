@@ -226,3 +226,34 @@ class RedisCache:
             with (yield from cls.get_pool()) as redis:
                 return (yield from redis.keys(pattern_str))
         return []
+
+    @classmethod
+    @coroutine
+    def make_set(cls, key, value, namespace=None):
+        """
+        Make a set data structure in a cache if not exists. If exists then add the key into the existing set.
+        :param key: Key name
+        :param value: Value
+        :param namespace : Namespace to associate the key with
+        :param expire: expiration
+        :return:
+        """
+        with (yield from cls.get_pool()) as redis:
+            if namespace is not None:
+                key = cls._get_key(namespace, key)
+            yield from redis.sadd(key, value)
+
+    @classmethod
+    @coroutine
+    def get_members_of_set(cls, key, namespace=None):
+        """
+        Get all members of set in the cache.
+        :param key: Key name
+        :param namespace : Namespace to associate the key with
+        :param expire: expiration
+        :return:
+        """
+        with (yield from cls.get_pool()) as redis:
+            if namespace is not None:
+                key = cls._get_key(namespace, key)
+            return (yield from redis.smembers(key, encoding=cls._utf8))
