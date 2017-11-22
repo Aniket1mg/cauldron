@@ -4,7 +4,7 @@ from asyncio import coroutine
 from functools import wraps
 import json
 import hashlib
-
+import logging
 
 class RedisCache:
     _pool = None
@@ -188,7 +188,8 @@ class RedisCache:
                         result = yield from func(*args, **kwargs)
                         yield from RedisCache.hmset(digest_key, json.dumps(result), name_space)
 
-                except Exception:
+                except Exception as e:
+                    logging.getLogger().error("caching error {}".format(str(e)))
                     result = yield from func(*args, **kwargs)
                 return result
             return redis_check
@@ -216,7 +217,8 @@ class RedisCache:
                         return json.loads(result)
                     result = yield from func(*args, **kwargs)
                     yield from RedisCache.set_key(digest_key, json.dumps(result), name_space, expire_time)
-                except Exception:
+                except Exception as e:
+                    logging.getLogger().error("caching error {}".format(str(e)))
                     result = yield from func(*args, **kwargs)
                 return result
             return apply_cache
