@@ -1,3 +1,5 @@
+import time
+
 from asyncio import coroutine
 from contextlib import contextmanager
 from functools import wraps
@@ -135,10 +137,53 @@ class PostgresStore:
     _pool_pending = asyncio.Semaphore(1)
     _return_val = ' returning *;'
 
+    TRANSACTION_STATUS = {
+        0: 'TRANSACTION_STATUS_IDLE',
+        1: 'TRANSACTION_STATUS_ACTIVE',
+        2: 'TRANSACTION_STATUS_INTRANS',
+        3: 'TRANSACTION_STATUS_INERROR',
+        4: 'TRANSACTION_STATUS_UNKNOWN'
+    }
+
+    CONNECTION_STATUS = {
+        0: 'STATUS_SETUP',
+        1: 'STATUS_READY',
+        2: 'STATUS_BEGIN',
+        3: 'STATUS_SYNC',
+        4: 'STATUS_ASYNC',
+        5: 'STATUS_PREPARED'
+    }
+
+    _LOCK_TIMESTAMP = asyncio.Semaphore(1)
+    _LOCK_COUNT = asyncio.Semaphore(1)
+
+    _TOTAL_LOG_COUNTS = 0
+    _LAST_LOG_TIMESTAMP = int(time.time())
+
+    @classmethod
+    def get_total_log_counts(cls):
+        with(yield from cls._LOCK_COUNT):
+            return cls._TOTAL_LOG_COUNTS
+
+    @classmethod
+    def update_total_log_count(cls):
+        with(yield from cls._LOCK_COUNT):
+            cls._TOTAL_LOG_COUNTS += 1
+
+    @classmethod
+    def get_last_log_timestamp(cls):
+        with(yield from cls._LOCK_TIMESTAMP):
+            return cls._LAST_LOG_TIMESTAMP
+
+    @classmethod
+    def update_last_log_timestamp(cls):
+        with(yield from cls._LOCK_TIMESTAMP):
+            cls._LAST_LOG_TIMESTAMP = int(time.time())
+
     @classmethod
     def connect(cls, database: str, user: str, password: str, host: str, port: int, *, use_pool: bool=True,
                 enable_ssl: bool=False, minsize=1, maxsize=10, keepalives_idle=5, keepalives_interval=4, echo=False,
-                refresh_period=-1,
+                refresh_period=-1, acquire_conn_wait_time=60,
                 **kwargs):
         """
         Sets connection parameters
@@ -159,6 +204,7 @@ class PostgresStore:
         cls._connection_params.update(kwargs)
         cls._use_pool = use_pool
         cls.refresh_period = refresh_period
+        cls._acquire_conn_wait_time = acquire_conn_wait_time or 60
 
     @classmethod
     def use_pool(cls, pool: Pool):
@@ -195,31 +241,113 @@ class PostgresStore:
             yield from cls._pool.clear()
             asyncio.async(cls._periodic_cleansing())
 
+    @classmethod
+    @coroutine
+    def get_cursor(cls, cursor_type=_CursorType.PLAIN, override_use_pool=True):
+        """
+        Yields: new client-side cursor from existing db connection pool
+        """
+        if cls._use_pool and override_use_pool:
+            _connection_source = yield from cls.get_pool()
+        else:
+            dsn_str = "dbname='{}' user='{}' password='{}' host='{}'".format(cls._connection_params['database'], cls._connection_params['user'], cls._connection_params['password'], cls._connection_params['host'])
+            _connection_source = yield from aiopg.connect(dsn_str)
+
+        if cursor_type == _CursorType.NAMEDTUPLE:
+            cursor_ft = psycopg2.extras.NamedTupleCursor
+        elif cursor_type == _CursorType.DICT:
+            cursor_ft = psycopg2.extras.DictCursor
+        else:
+            cursor_ft = None
+
+        _cur = yield from cls.cursor_from_connection_source(_connection_source, cursor_ft)
+
+        if not (cls._use_pool and override_use_pool):
+            _cur = cursor_context_manager(_connection_source, _cur)
+        return _cur
 
     @classmethod
     @coroutine
-    def get_cursor(cls, cursor_type=_CursorType.PLAIN) -> Cursor:
+    def cursor_from_connection_source(cls, connection_source, cursor_ft: _CursorType):
+        try:
+            _cur = yield from asyncio.wait_for(connection_source.cursor(cursor_factory=cursor_ft), timeout=cls._acquire_conn_wait_time)
+            return _cur
+        except asyncio.TimeoutError:
+            logging.getLogger().info('Could not acquire connection from pool in %s seconds', cls._acquire_conn_wait_time)
+            asyncio.async(cls.log_connection_pool_state())
+            raise asyncio.TimeoutError
+
+    @classmethod
+    @coroutine
+    def log_connection_pool_state(cls):
+
+        # Check if function was executed in last 10 mins
+        last_run_time = yield from cls.get_last_log_timestamp()
+        total_log_count = yield from cls.get_total_log_counts()
+        if int(time.time()) - last_run_time < 60 * 10 and total_log_count > 0:
+            return
+
+        yield from cls.update_last_log_timestamp()
+        yield from cls.update_total_log_count()
+
+        current_pool = cls._pool
+        used_connections = list(current_pool._used)
+        free_connections = list(current_pool._free)
+        log_message_arr = list()
+
+        log_message_arr.append(
+            'Total free connections {}. Total used connections {}'.format(len(free_connections), len(used_connections)))
+
+        not_active_backend_process = {used_conn._conn.get_backend_pid(): used_conn for used_conn in used_connections}
+        if not_active_backend_process:
+
+            log_message_arr.append('There are not active connections in used pool, logging their details....')
+
+            get_backend_process_details_query = "select pid, state, query, now() current_time, query_start, state_change from pg_stat_activity where pid in %s"
+            all_pids = list(not_active_backend_process.keys())
+            backend_process_details = yield from cls.run_query_on_separate_connection(get_backend_process_details_query,
+                                                                                      (tuple(all_pids),),
+                                                                                      _CursorType.NAMEDTUPLE)
+            for process_detail in backend_process_details:
+                connection_obj = not_active_backend_process[process_detail.pid]
+                auto_commit = connection_obj.autocommit
+                timeout = connection_obj.timeout
+                cursor_factory = connection_obj.cursor_factory
+                transaction_status = connection_obj._conn.get_transaction_status()
+                transaction_status = cls.TRANSACTION_STATUS[
+                    transaction_status] if transaction_status in cls.TRANSACTION_STATUS else transaction_status
+                connection_status = connection_obj.status
+                connection_status = cls.CONNECTION_STATUS[
+                    connection_status] if connection_status in cls.CONNECTION_STATUS else connection_status
+
+                query_last_executed = process_detail.query
+                connnection_state_in_rds = process_detail.state
+                last_query_start_time = process_detail.query_start
+                last_state_change_time = process_detail.state_change
+                now_time = process_detail.now_time
+
+                log_message_arr.append('Backend process id {}, autocommit {}, timeout {}, cursor_factory {}, '
+                                       'transaction_status {}, connection_status {}, connnection_state_in_rds {}, '
+                                       'now_time {}, last_query_start_time {}, last_state_change_time {}, '
+                                       'query_last_executed {}'.
+                                       format(process_detail.pid, auto_commit, timeout, cursor_factory,
+                                              transaction_status, connection_status, connnection_state_in_rds,
+                                              now_time, last_query_start_time, last_state_change_time,
+                                              query_last_executed))
+
+        log_message = '###########'.join(log_message_arr)
+        logging.getLogger().info(log_message)
+
+    @classmethod
+    @coroutine
+    def run_query_on_separate_connection(cls, query, format_values: tuple = None, cursor_type=_CursorType.PLAIN):
         """
-        Yields:
-            new client-side cursor from existing db connection pool
+        Runs DB query on a new connection (does not use connections from cls._pool)
         """
-        _cur = None
-        if cls._use_pool:
-            _connection_source = yield from cls.get_pool()
-        else:
-            _connection_source = yield from aiopg.connect(echo=False, **cls._connection_params)
-
-        if cursor_type == _CursorType.PLAIN:
-            _cur = yield from _connection_source.cursor()
-        if cursor_type == _CursorType.NAMEDTUPLE:
-            _cur = yield from _connection_source.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor)
-        if cursor_type == _CursorType.DICT:
-            _cur = yield from _connection_source.cursor(cursor_factory=psycopg2.extras.DictCursor)
-
-        if not cls._use_pool:
-            _cur = cursor_context_manager(_connection_source, _cur)
-
-        return _cur
+        format_values = format_values or []
+        with (yield from cls.get_cursor(cursor_type, False)) as cur:
+            yield from cur.execute(query, format_values)
+            return (yield from cur.fetchall())
 
     @classmethod
     @coroutine
