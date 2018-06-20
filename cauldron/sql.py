@@ -1,3 +1,4 @@
+from ddtrace import Pin, patch
 from asyncio import coroutine
 from contextlib import contextmanager
 from functools import wraps
@@ -5,6 +6,8 @@ from enum import Enum
 import aiopg
 import asyncio
 import logging
+
+patch(aiopg=True)
 
 from aiopg import create_pool, Pool, Cursor
 
@@ -166,6 +169,7 @@ class PostgresStore:
         cls._connection_params.update(kwargs)
         cls._use_pool = use_pool
         cls.refresh_period = refresh_period
+        Pin.override(database, service='{}_postgres'.format(database))
 
     @classmethod
     def use_pool(cls, pool: Pool):
