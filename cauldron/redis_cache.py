@@ -175,9 +175,9 @@ class RedisCache:
 
     @classmethod
     async def asyncio_redis_decorator(cls, name_space=''):
-        def wrapped(func):
+        async def wrapped(func):
             @wraps(func)
-            def redis_check(*args, **kwargs):
+            async def redis_check(*args, **kwargs):
                 _args = ''
                 if args and len(args) > 0:
                     new_args = []
@@ -201,9 +201,9 @@ class RedisCache:
 
     @classmethod
     async def redis_cache_decorator(cls, name_space='', expire_time=0):
-        def wrapped(func):
+        async def wrapped(func):
             @wraps(func)
-            def apply_cache(*args, **kwargs):
+            async def apply_cache(*args, **kwargs):
                 _args = ''
                 if args and len(args) > 0:
                     new_args = []
