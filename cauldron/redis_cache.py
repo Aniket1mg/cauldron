@@ -7,6 +7,7 @@ import hashlib
 import inspect
 allowed_types_for_caching = [str, int, list, tuple, float, dict, bool]
 
+
 class RedisCache:
     _pool = None
     _host = None
@@ -18,13 +19,13 @@ class RedisCache:
 
     @classmethod
     @coroutine
-    def get_pool(cls):
+    async def get_pool(cls):
         if not cls._pool:
-            with (yield from cls._lock):
+            with (await cls._lock):
                 if not cls._pool:
-                    cls._pool = yield from aioredis.create_pool((cls._host, cls._port), minsize=cls._minsize,
-                                                                maxsize=cls._maxsize)
-        return (yield from cls._pool)
+                    cls._pool = await aioredis.create_pool((cls._host, cls._port), minsize=cls._minsize,
+                                                           maxsize=cls._maxsize)
+        return await cls._pool
 
     @classmethod
     def connect_v2(cls, host, port, minsize=5, maxsize=10, loop=None):
@@ -41,18 +42,18 @@ class RedisCache:
 
     @classmethod
     @coroutine
-    def connect(cls, host, port, minsize=5, maxsize=10, loop=asyncio.get_event_loop()):
+    async def connect(cls, host, port, minsize=5, maxsize=10, loop=asyncio.get_event_loop()):
         """
         Setup a connection pool
         :param host: Redis host
         :param port: Redis port
         :param loop: Event loop
         """
-        cls._pool = yield from aioredis.create_pool((host, port), minsize=minsize, maxsize=maxsize, loop=loop)
+        cls._pool = await aioredis.create_pool((host, port), minsize=minsize, maxsize=maxsize, loop=loop)
 
     @classmethod
     @coroutine
-    def set_key(cls, key, value, namespace=None, expire=0):
+    async def set_key(cls, key, value, namespace=None, expire=0):
         """
         Set a key in a cache.
         :param key: Key name
@@ -61,31 +62,31 @@ class RedisCache:
         :param expire: expiration
         :return:
         """
-        with (yield from cls.get_pool()) as redis:
+        with (await cls.get_pool()) as redis:
             if namespace is not None:
                 key = cls._get_key(namespace, key)
-            yield from redis.set(key, value, expire=expire)
+            await redis.set(key, value, expire=expire)
 
     @classmethod
     @coroutine
-    def increment_value(cls, key, namespace=None):
+    async def increment_value(cls, key, namespace=None):
         # Set a redis key and increment the value by one
-        with (yield from cls.get_pool()) as redis:
+        with (await cls.get_pool()) as redis:
             if namespace is not None:
                 key = cls._get_key(namespace, key)
-            yield from redis.incr(key)
+            await redis.incr(key)
 
     @classmethod
     @coroutine
-    def increment_by_value(cls, key, value:int, namespace=None):
-        with (yield from cls.get_pool()) as redis:
+    async def increment_by_value(cls, key, value:int, namespace=None):
+        with (await cls.get_pool()) as redis:
             if namespace is not None:
                 key = cls._get_key(namespace, key)
-            yield from redis.incrby(key, value)
+            await redis.incrby(key, value)
 
     @classmethod
     @coroutine
-    def set_key_if_not_exists(cls, key, value, namespace=None, expire=0):
+    async def set_key_if_not_exists(cls, key, value, namespace=None, expire=0):
         """
         Set a redis key and return True if the key does not exists else return False
         :param key: Key name
@@ -94,87 +95,87 @@ class RedisCache:
         :param expire: expiration
         :return:
         """
-        with (yield from cls.get_pool()) as redis:
+        with (await cls.get_pool()) as redis:
             if namespace:
                 key = cls._get_key(namespace, key)
-            return (yield from redis.set(key, value, expire=expire, exist='SET_IF_NOT_EXIST'))
+            return (await redis.set(key, value, expire=expire, exist='SET_IF_NOT_EXIST'))
 
     @classmethod
     @coroutine
-    def get_key(cls, key, namespace=None):
-        with (yield from cls.get_pool()) as redis:
+    async def get_key(cls, key, namespace=None):
+        with (await cls.get_pool()) as redis:
             if namespace is not None:
                 key = cls._get_key(namespace, key)
-            return (yield from redis.get(key, encoding=cls._utf8))
+            return (await redis.get(key, encoding=cls._utf8))
 
     @classmethod
     @coroutine
-    def hmget(cls, fields, namespace=''):
-        with (yield from cls.get_pool()) as redis:
-            return (yield from redis.hmget(namespace, *fields))
+    async def hmget(cls, fields, namespace=''):
+        with (await cls.get_pool()) as redis:
+            return (await redis.hmget(namespace, *fields))
 
     @classmethod
     @coroutine
-    def hmset(cls, field, value, namespace=''):
-        with (yield from cls.get_pool()) as redis:
-            yield from redis.hmset(namespace, field, value)
+    async def hmset(cls, field, value, namespace=''):
+        with (await cls.get_pool()) as redis:
+            await redis.hmset(namespace, field, value)
 
     @classmethod
     @coroutine
-    def delete(cls, key, namespace=None):
-        with (yield from cls.get_pool()) as redis:
+    async def delete(cls, key, namespace=None):
+        with (await cls.get_pool()) as redis:
             if namespace is not None:
                 key = cls._get_key(namespace, key)
-            yield from redis.delete(key)
+            await redis.delete(key)
 
     @classmethod
-    def hdel(cls, key, namespace):
-        with (yield from cls.get_pool()) as redis:
+    async def hdel(cls, key, namespace):
+        with (await cls.get_pool()) as redis:
             if namespace is not None:
-                yield from redis.hdel(namespace, key)
+                await redis.hdel(namespace, key)
 
     @classmethod
-    def hgetall(cls, namespace):
-        with (yield from cls.get_pool()) as redis:
+    async def hgetall(cls, namespace):
+        with (await cls.get_pool()) as redis:
             if namespace is not None:
-                return (yield from redis.hgetall(namespace, encoding=cls._utf8))
+                return (await redis.hgetall(namespace, encoding=cls._utf8))
 
     @classmethod
     @coroutine
-    def clear_namespace(cls, namespace) -> int:
+    async def clear_namespace(cls, namespace) -> int:
         pattern = namespace + '*'
-        return (yield from cls._delete_by_pattern(pattern))
+        return (await cls._delete_by_pattern(pattern))
 
     @classmethod
     @coroutine
-    def _delete_by_pattern(cls, pattern: str) -> int:
+    async def _delete_by_pattern(cls, pattern: str) -> int:
         if not pattern:
             return 0
-        with (yield from cls.get_pool()) as redis:
-            _keys = yield from redis.keys(pattern)
+        with (await cls.get_pool()) as redis:
+            _keys = await redis.keys(pattern)
             if _keys:
-                yield from redis.delete(*_keys)
+                await redis.delete(*_keys)
         return len(_keys)
 
     @classmethod
     @coroutine
-    def delete_by_prefix(cls, prefix, namespace=None):
+    async def delete_by_prefix(cls, prefix, namespace=None):
         prefix_with_namespace = cls._get_key(namespace, prefix) if namespace else prefix
         pattern = '{}*'.format(prefix_with_namespace)
-        return (yield from cls._delete_by_pattern(pattern))
+        return (await cls._delete_by_pattern(pattern))
 
     @classmethod
     @coroutine
-    def exit(cls):
+    async def exit(cls):
         if cls._pool:
-            yield from cls._pool.clear()
+            await cls._pool.clear()
 
     @staticmethod
     def _get_key(namespace, key):
         return namespace + ':' + key
 
     @classmethod
-    def asyncio_redis_decorator(cls, name_space=''):
+    async def asyncio_redis_decorator(cls, name_space=''):
         def wrapped(func):
             @wraps(func)
             def redis_check(*args, **kwargs):
@@ -189,18 +190,18 @@ class RedisCache:
                     _args = str(new_args)
                 redis_key = json.dumps({'func': func.__name__, 'args': _args, 'kwargs': kwargs}, sort_keys=True)
                 digest_key = hashlib.md5(redis_key.encode(cls._utf8)).hexdigest()
-                result = yield from RedisCache.hmget([digest_key], name_space)
+                result = await RedisCache.hmget([digest_key], name_space)
                 if result and len(result) > 0 and result[0]:
                     return json.loads(result[0].decode(cls._utf8))
                 else:
-                    result = yield from func(*args, **kwargs)
-                    yield from RedisCache.hmset(digest_key, json.dumps(result), name_space)
+                    result = await func(*args, **kwargs)
+                    await RedisCache.hmset(digest_key, json.dumps(result), name_space)
                     return result
             return redis_check
         return wrapped
 
     @classmethod
-    def redis_cache_decorator(cls, name_space='', expire_time=0):
+    async def redis_cache_decorator(cls, name_space='', expire_time=0):
         def wrapped(func):
             @wraps(func)
             def apply_cache(*args, **kwargs):
@@ -215,54 +216,54 @@ class RedisCache:
                     _args = str(new_args)
                 redis_key = json.dumps({'func': func.__name__, 'args': _args, 'kwargs': kwargs}, sort_keys=True)
                 digest_key = hashlib.md5(redis_key.encode(cls._utf8)).hexdigest()
-                result = yield from RedisCache.get_key(digest_key, name_space)
+                result = await RedisCache.get_key(digest_key, name_space)
                 if result:
                     return json.loads(result)
-                result = yield from func(*args, **kwargs)
-                yield from RedisCache.set_key(digest_key, json.dumps(result), name_space, expire_time)
+                result = await func(*args, **kwargs)
+                await RedisCache.set_key(digest_key, json.dumps(result), name_space, expire_time)
                 return result
             return apply_cache
         return wrapped
 
     @classmethod
     @coroutine
-    def run_lua(cls, script: str, keys: list, args: list = None, namespace=None):
+    async def run_lua(cls, script: str, keys: list, args: list = None, namespace=None):
         args = args or []
-        with (yield from cls.get_pool()) as redis:
+        with (await cls.get_pool()) as redis:
             if script:
                 if namespace:
                     keys = [cls._get_key(namespace, key) for key in keys]
-                return (yield from redis.eval(script=script, keys=keys, args=args))
+                return (await redis.eval(script=script, keys=keys, args=args))
             return None
 
     @classmethod
     @coroutine
-    def scan(cls, pattern_str: str, scan_top_records=10000):
+    async def scan(cls, pattern_str: str, scan_top_records=10000):
         """
         Function to get all keys using scan in redis matching to pattern_str
         :param pattern_str: keys pattern
         :return: list of all redis keys available in top scan_top_records (default 10000) records
         """
         if pattern_str:
-            with (yield from cls.get_pool()) as redis:
-                return (yield from redis.scan(cursor=0, match=pattern_str, count=scan_top_records))
+            with (await cls.get_pool()) as redis:
+                return (await redis.scan(cursor=0, match=pattern_str, count=scan_top_records))
         return []
 
     @classmethod
     @coroutine
-    def keys(cls, pattern_str:str):
+    async def keys(cls, pattern_str:str):
         """
         Function to get all keys in redis matching to pattern_str
         :param pattern_str: keys pattern
         :return: list of redis keys
         """
         if pattern_str:
-            with (yield from cls.get_pool()) as redis:
-                return (yield from redis.keys(pattern_str))
+            with (await cls.get_pool()) as redis:
+                return (await redis.keys(pattern_str))
         return []
 
     @classmethod
-    def redis_cache_decorator_v2(cls, name_space='', expire_time=0):
+    async def redis_cache_decorator_v2(cls, name_space='', expire_time=0):
         def wrapped(func):
             @wraps(func)
             def apply_cache(*args, **kwargs):
@@ -283,14 +284,14 @@ class RedisCache:
 
                 redis_key = json.dumps({'func': func.__name__, 'args': _args, 'kwargs': _kwargs}, sort_keys=True)
                 digest_key = hashlib.md5(redis_key.encode(cls._utf8)).hexdigest()
-                result = yield from RedisCache.get_key(digest_key, name_space)
+                result = await RedisCache.get_key(digest_key, name_space)
                 if result:
                     return json.loads(result)
                 if inspect.isgeneratorfunction(func):
-                    result = yield from func(*args, **kwargs)
+                    result = await func(*args, **kwargs)
                 else:
                     result = func(*args, **kwargs)
-                yield from RedisCache.set_key(digest_key, json.dumps(result), name_space, expire_time)
+                await RedisCache.set_key(digest_key, json.dumps(result), name_space, expire_time)
                 return result
 
             return apply_cache
@@ -299,24 +300,24 @@ class RedisCache:
 
     @classmethod
     @coroutine
-    def lpush(cls, namespace, key, value, *values):
+    async def lpush(cls, namespace, key, value, *values):
         key = cls._get_key(namespace, key)
-        with (yield from cls.get_pool()) as redis:
-            return (yield from redis.lpush(key, value, *values))
+        with (await cls.get_pool()) as redis:
+            return (await redis.lpush(key, value, *values))
 
     @classmethod
     @coroutine
-    def llen(cls, namespace, key):
+    async def llen(cls, namespace, key):
         key = cls._get_key(namespace, key)
-        with (yield from cls.get_pool()) as redis:
-            return (yield from redis.llen(key))
+        with (await cls.get_pool()) as redis:
+            return (await redis.llen(key))
 
     @classmethod
     @coroutine
-    def lrange(cls, namespace, key, start, stop):
+    async def lrange(cls, namespace, key, start, stop):
         key = cls._get_key(namespace, key)
-        with (yield from cls.get_pool()) as redis:
-            return (yield from redis.lrange(key, start, stop))
+        with (await cls.get_pool()) as redis:
+            return (await redis.lrange(key, start, stop))
 
 
 class RedisCacheV2:
@@ -331,16 +332,16 @@ class RedisCacheV2:
         self._pool = None
 
     @coroutine
-    def get_pool(self):
+    async def get_pool(self):
         if not self._pool:
-            with (yield from self._lock):
+            with (await self._lock):
                 if not self._pool:
-                    self._pool = yield from aioredis.create_pool((self._host, self._port), minsize=self._minsize,
+                    self._pool = await aioredis.create_pool((self._host, self._port), minsize=self._minsize,
                                                                  maxsize=self._maxsize)
-        return (yield from self._pool)
+        return (await self._pool)
 
     @coroutine
-    def set_key(self, key, value, namespace=None, expire=0):
+    async def set_key(self, key, value, namespace=None, expire=0):
         """
         Set a key in a cache.
         :param key: Key name
@@ -349,28 +350,28 @@ class RedisCacheV2:
         :param expire: expiration
         :return:
         """
-        with (yield from self.get_pool()) as redis:
+        with (await self.get_pool()) as redis:
             if namespace is not None:
                 key = self._get_key(namespace, key)
-            yield from redis.set(key, value, expire=expire)
+            await redis.set(key, value, expire=expire)
 
     @coroutine
-    def increment_value(self, key, namespace=None):
+    async def increment_value(self, key, namespace=None):
         # Set a redis key and increment the value by one
-        with (yield from self.get_pool()) as redis:
+        with (await self.get_pool()) as redis:
             if namespace is not None:
                 key = self._get_key(namespace, key)
-            yield from redis.incr(key)
+            await redis.incr(key)
 
     @coroutine
-    def increment_by_value(self, key, value: int, namespace=None):
-        with (yield from self.get_pool()) as redis:
+    async def increment_by_value(self, key, value: int, namespace=None):
+        with (await self.get_pool()) as redis:
             if namespace is not None:
                 key = self._get_key(namespace, key)
-            yield from redis.incrby(key, value)
+            await redis.incrby(key, value)
 
     @coroutine
-    def set_key_if_not_exists(self, key, value, namespace=None, expire=0):
+    async def set_key_if_not_exists(self, key, value, namespace=None, expire=0):
         """
         Set a redis key and return True if the key does not exists else return False
         :param key: Key name
@@ -379,76 +380,76 @@ class RedisCacheV2:
         :param expire: expiration
         :return:
         """
-        with (yield from self.get_pool()) as redis:
+        with (await self.get_pool()) as redis:
             if namespace:
                 key = self._get_key(namespace, key)
-            return (yield from redis.set(key, value, expire=expire, exist='SET_IF_NOT_EXIST'))
+            return (await redis.set(key, value, expire=expire, exist='SET_IF_NOT_EXIST'))
 
     @coroutine
-    def get_key(self, key, namespace=None):
-        with (yield from self.get_pool()) as redis:
+    async def get_key(self, key, namespace=None):
+        with (await self.get_pool()) as redis:
             if namespace is not None:
                 key = self._get_key(namespace, key)
-            return (yield from redis.get(key, encoding=self._utf8))
+            return (await redis.get(key, encoding=self._utf8))
 
     @coroutine
-    def hmget(self, fields, namespace=''):
-        with (yield from self.get_pool()) as redis:
-            return (yield from redis.hmget(namespace, *fields))
+    async def hmget(self, fields, namespace=''):
+        with (await self.get_pool()) as redis:
+            return (await redis.hmget(namespace, *fields))
 
     @coroutine
-    def hmset(self, field, value, namespace=''):
-        with (yield from self.get_pool()) as redis:
-            yield from redis.hmset(namespace, field, value)
+    async def hmset(self, field, value, namespace=''):
+        with (await self.get_pool()) as redis:
+            await redis.hmset(namespace, field, value)
 
     @coroutine
-    def delete(self, key, namespace=None):
-        with (yield from self.get_pool()) as redis:
+    async def delete(self, key, namespace=None):
+        with (await self.get_pool()) as redis:
             if namespace is not None:
                 key = self._get_key(namespace, key)
-            yield from redis.delete(key)
+            await redis.delete(key)
 
-    def hdel(self, key, namespace):
-        with (yield from self.get_pool()) as redis:
+    async def hdel(self, key, namespace):
+        with (await self.get_pool()) as redis:
             if namespace is not None:
-                yield from redis.hdel(namespace, key)
+                await redis.hdel(namespace, key)
 
-    def hgetall(self, namespace):
-        with (yield from self.get_pool()) as redis:
+    async def hgetall(self, namespace):
+        with (await self.get_pool()) as redis:
             if namespace is not None:
-                return (yield from redis.hgetall(namespace, encoding=self._utf8))
+                return (await redis.hgetall(namespace, encoding=self._utf8))
 
     @coroutine
-    def clear_namespace(self, namespace) -> int:
+    async def clear_namespace(self, namespace) -> int:
         pattern = namespace + '*'
-        return (yield from self._delete_by_pattern(pattern))
+        return (await self._delete_by_pattern(pattern))
 
     @coroutine
-    def _delete_by_pattern(self, pattern: str) -> int:
+    async def _delete_by_pattern(self, pattern: str) -> int:
         if not pattern:
             return 0
-        with (yield from self.get_pool()) as redis:
-            _keys = yield from redis.keys(pattern)
+        with (await self.get_pool()) as redis:
+            _keys = await redis.keys(pattern)
             if _keys:
-                yield from redis.delete(*_keys)
+                await redis.delete(*_keys)
         return len(_keys)
 
     @coroutine
-    def delete_by_prefix(self, prefix, namespace=None):
+    async def delete_by_prefix(self, prefix, namespace=None):
         prefix_with_namespace = self._get_key(namespace, prefix) if namespace else prefix
         pattern = '{}*'.format(prefix_with_namespace)
-        return (yield from self._delete_by_pattern(pattern))
+        return (await self._delete_by_pattern(pattern))
 
     @coroutine
-    def exit(self):
+    async def exit(self):
         if self._pool:
-            yield from self._pool.clear()
+            await self._pool.clear()
 
     @staticmethod
     def _get_key(namespace, key):
         return namespace + ':' + key
 
-    def asyncio_redis_decorator(self, name_space=''):
+    async def asyncio_redis_decorator(self, name_space=''):
         def wrapped(func):
             @wraps(func)
             def redis_check(*args, **kwargs):
@@ -463,19 +464,19 @@ class RedisCacheV2:
                     _args = str(new_args)
                 redis_key = json.dumps({'func': func.__name__, 'args': _args, 'kwargs': kwargs}, sort_keys=True)
                 digest_key = hashlib.md5(redis_key.encode(self._utf8)).hexdigest()
-                result = yield from self.hmget([digest_key], name_space)
+                result = await self.hmget([digest_key], name_space)
                 if result and len(result) > 0 and result[0]:
                     return json.loads(result[0].decode(self._utf8))
                 else:
-                    result = yield from func(*args, **kwargs)
-                    yield from self.hmset(digest_key, json.dumps(result), name_space)
+                    result = await func(*args, **kwargs)
+                    await self.hmset(digest_key, json.dumps(result), name_space)
                     return result
 
             return redis_check
 
         return wrapped
 
-    def redis_cache_decorator(self, name_space='', expire_time=0):
+    async def redis_cache_decorator(self, name_space='', expire_time=0):
         def wrapped(func):
             @wraps(func)
             def apply_cache(*args, **kwargs):
@@ -490,11 +491,11 @@ class RedisCacheV2:
                     _args = str(new_args)
                 redis_key = json.dumps({'func': func.__name__, 'args': _args, 'kwargs': kwargs}, sort_keys=True)
                 digest_key = hashlib.md5(redis_key.encode(self._utf8)).hexdigest()
-                result = yield from self.get_key(digest_key, name_space)
+                result = await self.get_key(digest_key, name_space)
                 if result:
                     return json.loads(result)
-                result = yield from func(*args, **kwargs)
-                yield from self.set_key(digest_key, json.dumps(result), name_space, expire_time)
+                result = await func(*args, **kwargs)
+                await self.set_key(digest_key, json.dumps(result), name_space, expire_time)
                 return result
 
             return apply_cache
@@ -502,42 +503,42 @@ class RedisCacheV2:
         return wrapped
 
     @coroutine
-    def run_lua(self, script: str, keys: list, args: list = None, namespace=None):
+    async def run_lua(self, script: str, keys: list, args: list = None, namespace=None):
         args = args or []
-        with (yield from self.get_pool()) as redis:
+        with (await self.get_pool()) as redis:
             if script:
                 if namespace:
                     keys = [self._get_key(namespace, key) for key in keys]
-                return (yield from redis.eval(script=script, keys=keys, args=args))
+                return (await redis.eval(script=script, keys=keys, args=args))
             return None
 
     @classmethod
     @coroutine
-    def scan(cls, pattern_str: str, scan_top_records=10000):
+    async def scan(cls, pattern_str: str, scan_top_records=10000):
         """
         Function to get all keys using scan in redis matching to pattern_str
         :param pattern_str: keys pattern
         :return: list of all redis keys available in top scan_top_records (default 10000) records
         """
         if pattern_str:
-            with (yield from cls.get_pool()) as redis:
-                return (yield from redis.scan(cursor=0, match=pattern_str, count=scan_top_records))
+            with (await cls.get_pool()) as redis:
+                return (await redis.scan(cursor=0, match=pattern_str, count=scan_top_records))
         return []
 
 
     @coroutine
-    def keys(self, pattern_str: str):
+    async def keys(self, pattern_str: str):
         """
         Function to get all keys in redis matching to pattern_str
         :param pattern_str: keys pattern
         :return: list of redis keys
         """
         if pattern_str:
-            with (yield from self.get_pool()) as redis:
-                return (yield from redis.keys(pattern_str))
+            with (await self.get_pool()) as redis:
+                return (await redis.keys(pattern_str))
         return []
 
-    def redis_cache_decorator_v2(self, name_space='', expire_time=0):
+    async def redis_cache_decorator_v2(self, name_space='', expire_time=0):
         def wrapped(func):
             @wraps(func)
             def apply_cache(*args, **kwargs):
@@ -558,11 +559,11 @@ class RedisCacheV2:
 
                 redis_key = json.dumps({'func': func.__name__, 'args': _args, 'kwargs': _kwargs}, sort_keys=True)
                 digest_key = hashlib.md5(redis_key.encode(self._utf8)).hexdigest()
-                result = yield from self.get_key(digest_key, name_space)
+                result = await self.get_key(digest_key, name_space)
                 if result:
                     return json.loads(result)
-                result = yield from func(*args, **kwargs)
-                yield from self.set_key(digest_key, json.dumps(result), name_space, expire_time)
+                result = await func(*args, **kwargs)
+                await self.set_key(digest_key, json.dumps(result), name_space, expire_time)
                 return result
 
             return apply_cache
@@ -571,21 +572,21 @@ class RedisCacheV2:
 
     @classmethod
     @coroutine
-    def lpush(cls, namespace, key, value, *values):
+    async def lpush(cls, namespace, key, value, *values):
         key = cls._get_key(namespace, key)
-        with (yield from cls.get_pool()) as redis:
-            return (yield from redis.lpush(key, value, *values))
+        with (await cls.get_pool()) as redis:
+            return await redis.lpush(key, value, *values)
 
     @classmethod
     @coroutine
-    def llen(cls, namespace, key):
+    async def llen(cls, namespace, key):
         key = cls._get_key(namespace, key)
-        with (yield from cls.get_pool()) as redis:
-            return (yield from redis.llen(key))
+        with (await cls.get_pool()) as redis:
+            return await redis.llen(key)
 
     @classmethod
     @coroutine
-    def lrange(cls, namespace, key, start, stop):
+    async def lrange(cls, namespace, key, start, stop):
         key = cls._get_key(namespace, key)
-        with (yield from cls.get_pool()) as redis:
-            return (yield from redis.lrange(key, start, stop))
+        with (await cls.get_pool()) as redis:
+            return await redis.lrange(key, start, stop)
