@@ -28,9 +28,9 @@ def dict_cursor(func):
     """
 
     @wraps(func)
-    def wrapper(cls, *args, **kwargs):
-        with (yield from cls.get_cursor(_CursorType.DICT)) as c:
-            return (yield from func(cls, c, *args, **kwargs))
+    async def wrapper(cls, *args, **kwargs):
+        with (await cls.get_cursor(_CursorType.DICT)) as c:
+            return (await func(cls, c, *args, **kwargs))
 
     return wrapper
 
@@ -50,9 +50,9 @@ def cursor(func):
     """
 
     @wraps(func)
-    def wrapper(cls, *args, **kwargs):
-        with (yield from cls.get_cursor(use_replica=kwargs.get(USE_REPLICA))) as c:
-            return (yield from func(cls, c, *args, **kwargs))
+    async def wrapper(cls, *args, **kwargs):
+        with (await cls.get_cursor(use_replica=kwargs.get(USE_REPLICA))) as c:
+            return (await func(cls, c, *args, **kwargs))
 
     return wrapper
 
@@ -72,9 +72,9 @@ def nt_cursor(func):
     """
 
     @wraps(func)
-    def wrapper(cls, *args, **kwargs):
-        with (yield from cls.get_cursor(_CursorType.NAMEDTUPLE, kwargs.get(USE_REPLICA))) as c:
-            return (yield from func(cls, c, *args, **kwargs))
+    async def wrapper(cls, *args, **kwargs):
+        with (await cls.get_cursor(_CursorType.NAMEDTUPLE, kwargs.get(USE_REPLICA))) as c:
+            return (await func(cls, c, *args, **kwargs))
 
     return wrapper
 
@@ -93,16 +93,16 @@ def transaction(func):
     """
 
     @wraps(func)
-    def wrapper(cls, *args, **kwargs):
-        with (yield from cls.get_cursor(_CursorType.NAMEDTUPLE)) as c:
+    async def wrapper(cls, *args, **kwargs):
+        with (await cls.get_cursor(_CursorType.NAMEDTUPLE)) as c:
             try:
-                yield from c.execute('BEGIN')
-                result = (yield from func(cls, c, *args, **kwargs))
+                await c.execute('BEGIN')
+                result = (await func(cls, c, *args, **kwargs))
             except Exception as e:
-                yield from c.execute('ROLLBACK')
+                await c.execute('ROLLBACK')
                 raise e
             else:
-                yield from c.execute('COMMIT')
+                await c.execute('COMMIT')
                 return result
 
     return wrapper
@@ -193,7 +193,7 @@ class PostgresStore:
 
     @classmethod
     @coroutine
-    def _get_pool(cls, _conn_params, _conn_pool_pending, _pool, _is_replica):
+    async def _get_pool(cls, _conn_params, _conn_pool_pending, _pool, _is_replica):
         """
         Yields:
             existing db connection pool
@@ -201,16 +201,16 @@ class PostgresStore:
         if len(_conn_params) < 5:
             raise ConnectionError('Please call SQLStore.connect before calling this method')
         if not _pool:
-            with (yield from _conn_pool_pending):
+            with (await _conn_pool_pending):
                 if not _pool:
-                    _pool = yield from create_pool(**_conn_params)
-                    asyncio.async(cls._periodic_cleansing(_is_replica))
+                    _pool = await create_pool(**_conn_params)
+                    await asyncio.ensure_future(cls._periodic_cleansing(_is_replica))
                     
         return _pool
     
     @classmethod
     @coroutine
-    def get_pool(cls, _use_replica=False):
+    async def get_pool(cls, _use_replica=False):
         """
         :param cls:
         :param _use_replica:
@@ -218,49 +218,49 @@ class PostgresStore:
         """
 
         if _use_replica:
-            cls._replica_pool = yield from  cls._get_pool(cls._replica_connection_params, cls._replica_pool_pending, cls._replica_pool, _use_replica)
+            cls._replica_pool = await cls._get_pool(cls._replica_connection_params, cls._replica_pool_pending, cls._replica_pool, _use_replica)
             return cls._replica_pool
         else:
-            cls._pool = yield from cls._get_pool(cls._connection_params, cls._pool_pending, cls._pool, _use_replica)
+            cls._pool = await cls._get_pool(cls._connection_params, cls._pool_pending, cls._pool, _use_replica)
             return cls._pool
 
     @classmethod
     @coroutine
-    def _periodic_cleansing(cls, _is_replica):
+    async def _periodic_cleansing(cls, _is_replica):
         """
         Periodically cleanses idle connections in pool
         """
         if cls.refresh_period > 0:
-            yield from asyncio.sleep(cls.refresh_period * 60)
+            await asyncio.sleep(cls.refresh_period * 60)
             logging.getLogger().info("Clearing unused DB connections")
             if _is_replica:
-                yield from cls._replica_pool.clear()
+                await cls._replica_pool.clear()
             else:
-                yield from cls._pool.clear()
-            asyncio.async(cls._periodic_cleansing(_is_replica))
+                await cls._pool.clear()
+            await asyncio.ensure_future(cls._periodic_cleansing(_is_replica))
 
 
     @classmethod
     @coroutine
-    def get_cursor(cls, cursor_type=_CursorType.PLAIN, use_replica=False) -> Cursor:
+    async def get_cursor(cls, cursor_type=_CursorType.PLAIN, use_replica=False) -> Cursor:
         """
         Yields:
             new client-side cursor from existing db connection pool
         """
         if cls._use_pool:
-            _connection_source = yield from cls.get_pool(use_replica)
+            _connection_source = await cls.get_pool(use_replica)
         else:
             if use_replica:
-                _connection_source = yield from aiopg.connect(echo=False, **cls_replica_connection_params)
+                _connection_source = await aiopg.connect(echo=False, **cls._replica_connection_params)
             else:
-                _connection_source = yield from aiopg.connect(echo=False, **cls._connection_params)
+                _connection_source = await aiopg.connect(echo=False, **cls._connection_params)
 
         if cursor_type == _CursorType.PLAIN:
-            _cur = yield from _connection_source.cursor()
+            _cur = await _connection_source.cursor()
         if cursor_type == _CursorType.NAMEDTUPLE:
-            _cur = yield from _connection_source.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor)
+            _cur = await _connection_source.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor)
         if cursor_type == _CursorType.DICT:
-            _cur = yield from _connection_source.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            _cur = await _connection_source.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
         if not cls._use_pool:
             _cur = cursor_context_manager(_connection_source, _cur)
@@ -270,7 +270,7 @@ class PostgresStore:
     @classmethod
     @coroutine
     @cursor
-    def count(cls, cur, table:str, where_keys: list=None, use_replica=False):
+    async def count(cls, cur, table:str, where_keys: list=None, use_replica=False):
         """
         gives the number of records in the table
 
@@ -289,14 +289,14 @@ class PostgresStore:
         else:
             query = cls._count_query.format(table)
             q, t = query, ()
-        yield from cur.execute(q, t)
-        result = yield from cur.fetchone()
+        await cur.execute(q, t)
+        result = await cur.fetchone()
         return int(result[0])
 
     @classmethod
     @coroutine
     @nt_cursor
-    def insert(cls, cur, table: str, values: dict):
+    async def insert(cls, cur, table: str, values: dict):
         """
         Creates an insert statement with only chosen fields
 
@@ -311,13 +311,13 @@ class PostgresStore:
         keys = cls._COMMA.join(values.keys())
         value_place_holder = cls._PLACEHOLDER * len(values)
         query = cls._insert_string.format(table, keys, value_place_holder[:-1])
-        yield from cur.execute(query, tuple(values.values()))
-        return (yield from cur.fetchone())
+        await cur.execute(query, tuple(values.values()))
+        return (await cur.fetchone())
 
     @classmethod
     @coroutine
     @nt_cursor
-    def bulk_insert(cls, cur, table: str, records: list):
+    async def bulk_insert(cls, cur, table: str, records: list):
         """
         Creates an insert statement with only chosen fields for a set of entries
 
@@ -332,15 +332,15 @@ class PostgresStore:
         for record in records:
             value_ordered.append([record[key] for key in records[0]])
         value_place_holder = cls._LPAREN + (cls._PLACEHOLDER*len(records[0]))[:-1] + cls._RPAREN
-        values = ','.join((yield from cur.mogrify(value_place_holder, tuple(rec))).decode("utf-8") for rec in value_ordered)
-        yield from cur.execute(cls._bulk_insert_string.format(table, keys) + values + cls._return_val)
-        return (yield from cur.fetchall())
+        values = ','.join((await cur.mogrify(value_place_holder, tuple(rec))).decode("utf-8") for rec in value_ordered)
+        await cur.execute(cls._bulk_insert_string.format(table, keys) + values + cls._return_val)
+        return (await cur.fetchall())
 
 
     @classmethod
     @coroutine
     @nt_cursor
-    def update(cls, cur, table: str, values: dict, where_keys: list) -> tuple:
+    async def update(cls, cur, table: str, values: dict, where_keys: list) -> tuple:
         """
         Creates an update query with only chosen fields
         Supports only a single field where clause
@@ -361,8 +361,8 @@ class PostgresStore:
         value_place_holder = cls._PLACEHOLDER * len(values)
         where_clause, where_values = cls._get_where_clause_with_values(where_keys)
         query = cls._update_string.format(table, keys, value_place_holder[:-1], where_clause)
-        yield from cur.execute(query, (tuple(values.values()) + where_values))
-        return (yield from cur.fetchall())
+        await cur.execute(query, (tuple(values.values()) + where_values))
+        return (await cur.fetchall())
 
     @classmethod
     def _get_where_clause_with_values(cls, where_keys):
@@ -378,7 +378,7 @@ class PostgresStore:
     @classmethod
     @coroutine
     @cursor
-    def delete(cls, cur, table: str, where_keys: list):
+    async def delete(cls, cur, table: str, where_keys: list):
         """
         Creates a delete query with where keys
         Supports multiple where clause with and or or both
@@ -396,13 +396,13 @@ class PostgresStore:
         """
         where_clause, values = cls._get_where_clause_with_values(where_keys)
         query = cls._delete_query.format(table, where_clause)
-        yield from cur.execute(query, values)
+        await cur.execute(query, values)
         return cur.rowcount
 
     @classmethod
     @coroutine
     @nt_cursor
-    def select(cls, cur, table: str, order_by: str=None, columns: list=None, where_keys: list=None, limit=100,
+    async def select(cls, cur, table: str, order_by: str=None, columns: list=None, where_keys: list=None, limit=100,
                offset=0, group_by:str = None, use_replica=False):
         """
         Creates a select query for selective columns with where keys
@@ -473,15 +473,15 @@ class PostgresStore:
                 else:
                     query = cls._select_all_string.format(table, limit, offset)
                 q, t = query, ()
-        yield from cur.execute(q, t)
-        return (yield from cur.fetchall())
+        await cur.execute(q, t)
+        return (await cur.fetchall())
 
     @classmethod
     @coroutine
     @nt_cursor
-    def call_stored_procedure(cls, cur, procname, parameters=None, timeout=None):
-        yield from cur.callproc(procname, parameters=parameters, timeout=timeout)
-        return (yield from cur.fetchall())
+    async def call_stored_procedure(cls, cur, procname, parameters=None, timeout=None):
+        await cur.callproc(procname, parameters=parameters, timeout=timeout)
+        return (await cur.fetchall())
 
     @classmethod
     @coroutine
@@ -492,7 +492,7 @@ class PostgresStore:
     @classmethod
     @coroutine
     @nt_cursor
-    def raw_sql(cls, cur, query: str, values: tuple, use_replica=False):
+    async def raw_sql(cls, cur, query: str, values: tuple, use_replica=False):
         """
         Run a raw sql query
 
@@ -504,14 +504,14 @@ class PostgresStore:
             result of query as list of named tuple
 
         """
-        yield from cur.execute(query, values)
-        return (yield from cur.fetchall())
+        await cur.execute(query, values)
+        return (await cur.fetchall())
 
 
 @contextmanager
-def cursor_context_manager(conn, cur):
+async def cursor_context_manager(conn, cur):
     try:
-        yield cur
+        await cur
     finally:
         cur._impl.close()
         conn.close()
