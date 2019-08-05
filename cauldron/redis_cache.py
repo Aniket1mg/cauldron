@@ -174,8 +174,8 @@ class RedisCache:
         return namespace + ':' + key
 
     @classmethod
-    async def asyncio_redis_decorator(cls, name_space=''):
-        async def wrapped(func):
+    def asyncio_redis_decorator(cls, name_space=''):
+        def wrapped(func):
             @wraps(func)
             async def redis_check(*args, **kwargs):
                 _args = ''
@@ -200,8 +200,8 @@ class RedisCache:
         return wrapped
 
     @classmethod
-    async def redis_cache_decorator(cls, name_space='', expire_time=0):
-        async def wrapped(func):
+    def redis_cache_decorator(cls, name_space='', expire_time=0):
+        def wrapped(func):
             @wraps(func)
             async def apply_cache(*args, **kwargs):
                 _args = ''
@@ -262,8 +262,8 @@ class RedisCache:
         return []
 
     @classmethod
-    async def redis_cache_decorator_v2(cls, name_space='', expire_time=0):
-        async def wrapped(func):
+    def redis_cache_decorator_v2(cls, name_space='', expire_time=0):
+        def wrapped(func):
             @wraps(func)
             async def apply_cache(*args, **kwargs):
                 _args = ''
@@ -448,8 +448,8 @@ class RedisCacheV2:
     def _get_key(namespace, key):
         return namespace + ':' + key
 
-    async def asyncio_redis_decorator(self, name_space=''):
-        async def wrapped(func):
+    def asyncio_redis_decorator(self, name_space=''):
+        def wrapped(func):
             @wraps(func)
             async def redis_check(*args, **kwargs):
                 _args = ''
@@ -475,8 +475,8 @@ class RedisCacheV2:
 
         return wrapped
 
-    async def redis_cache_decorator(self, name_space='', expire_time=0):
-        async def wrapped(func):
+    def redis_cache_decorator(self, name_space='', expire_time=0):
+        def wrapped(func):
             @wraps(func)
             async def apply_cache(*args, **kwargs):
                 _args = ''
@@ -537,8 +537,8 @@ class RedisCacheV2:
                 return (await redis.keys(pattern_str))
         return []
 
-    async def redis_cache_decorator_v2(self, name_space='', expire_time=0):
-        async def wrapped(func):
+    def redis_cache_decorator_v2(self, name_space='', expire_time=0):
+        def wrapped(func):
             @wraps(func)
             async def apply_cache(*args, **kwargs):
                 _args = ''

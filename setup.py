@@ -1,9 +1,9 @@
 from setuptools import setup
 
-setup(name='cauldron',
+setup(name='vessel',
       version='3.0.0',
-      author='Ankit Chandawala',
-      author_email='ankitchandawala@gmail.com',
-      url='https://github.com/nerandell/cauldron',
+      author='1mg',
+      author_email='devops@1mg.com',
+      url='https://github.com/1mgOfficial/vessel',
       description='Utils to reduce boilerplate code',
-      packages=['cauldron'], install_requires=['aiopg', 'aioredis', 'psycopg2','elasticsearch'])
+      packages=['vessel'], install_requires=['aiopg', 'aioredis', 'psycopg2'])
