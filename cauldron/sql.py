@@ -473,6 +473,8 @@ class PostgresStore:
                 else:
                     query = cls._select_all_string.format(table, limit, offset)
                 q, t = query, ()
+
+        logging.getLogger().debug("Query: {}, params: {}".format(q, t))
         yield from cur.execute(q, t)
         return (yield from cur.fetchall())
 
