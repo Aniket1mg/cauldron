@@ -116,6 +116,16 @@ class RedisCache:
 
     @classmethod
     @coroutine
+    def decrement_value_if_exists(cls, key, namespace=None):
+        # decrement if key exists
+        lua_script = """if (redis.call("exists", KEYS[1]) > 0) then
+                            redis.call("decr", KEYS[1])
+                        end
+                        """
+        return (yield from RedisCache.run_lua(script=lua_script, keys=[key], namespace=namespace))
+
+    @classmethod
+    @coroutine
     def set_key_if_not_exists(cls, key, value, namespace=None, expire=0):
         """
         Set a redis key and return True if the key does not exists else return False
