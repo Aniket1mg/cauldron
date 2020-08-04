@@ -85,20 +85,6 @@ class RedisCache:
 
     @classmethod
     @coroutine
-    def increment_value_with_expiry(cls, key, namespace=None, expire=0):
-        # Set a redis key with 1 and increment the value by one with expiry
-        lua_script = """local count = redis.call('get', KEYS[1]) or 0
-                    count = count + 1
-                    redis.call('set', KEYS[1], count)
-                    if tonumber(ARGV[1]) > 0 then
-                        redis.call('expire', KEYS[1], ARGV[1])
-                    end
-                    return count
-                    """
-        return (yield from RedisCache.run_lua(script=lua_script, keys=[key], args=[expire], namespace=namespace))
-
-    @classmethod
-    @coroutine
     def increment_by_value(cls, key, value:int, namespace=None):
         with (yield from cls.get_pool()) as redis:
             if namespace is not None:
@@ -113,16 +99,6 @@ class RedisCache:
             if namespace is not None:
                 key = cls._get_key(namespace, key)
             yield from redis.decr(key)
-
-    @classmethod
-    @coroutine
-    def decrement_value_if_exists(cls, key, namespace=None):
-        # decrement if key exists
-        lua_script = """if (redis.call("exists", KEYS[1]) > 0) then
-                            redis.call("decr", KEYS[1])
-                        end
-                        """
-        return (yield from RedisCache.run_lua(script=lua_script, keys=[key], namespace=namespace))
 
     @classmethod
     @coroutine
