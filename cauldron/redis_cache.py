@@ -154,6 +154,13 @@ class RedisCache:
 
     @classmethod
     @coroutine
+    def hmset_with_ttl(cls,field,value,ttl,namespace =''):
+        with (yield from cls.get_pool()) as redis:
+            yield from redis.hmset(namespace, field, value)
+            redis.expire(namespace,ttl)
+
+    @classmethod
+    @coroutine
     def delete(cls, key, namespace=None):
         with (yield from cls.get_pool()) as redis:
             if namespace is not None:
