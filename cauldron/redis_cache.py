@@ -118,6 +118,37 @@ class RedisCache:
 
     @classmethod
     @coroutine
+    def check_key_exists(cls, key, namespace=None):
+        """
+        Check if key exists.
+        :param key: Key name
+        :param namespace : Namespace to associate the key with
+        :return: 1 if the key exists.
+                 0 if the key doesn't exists.
+        """
+        with (yield from cls.get_pool()) as redis:
+            if namespace is not None:
+                key = cls._get_key(namespace, key)
+            return (yield from redis.exists(key))
+
+    @classmethod
+    @coroutine
+    def set_key_expiry(cls, key, timeout: int, namespace=None):
+        """
+        expire: Set a timeout on key. timeout must be int
+        :param key: Key name
+        :param timeout: integer
+        :param namespace : Namespace to associate the key with
+        :return: 1 if the timeout was set.
+                 0 if the timeout was not set (eg: key doesn't exist/operation skipped due to given args.)
+        """
+        with (yield from cls.get_pool()) as redis:
+            if namespace is not None:
+                key = cls._get_key(namespace, key)
+            return (yield from redis.expire(key, timeout))
+
+    @classmethod
+    @coroutine
     def get_key(cls, key, namespace=None):
         with (yield from cls.get_pool()) as redis:
             if namespace is not None:
@@ -381,6 +412,15 @@ class RedisCache:
           key = cls._get_key(namespace, key)
         with (yield from cls.get_pool()) as redis:
             return (yield from redis.zrangebyscore(key, min, max, withscores, offset, count))
+
+    @classmethod
+    @coroutine
+    def zrevrangebyscore(cls, key, namespace=None, min=float('-inf'), max=float('inf'), withscores=False, offset=None,
+                      count=None):
+        if namespace is not None:
+            key = cls._get_key(namespace, key)
+        with (yield from cls.get_pool()) as redis:
+            return (yield from redis.zrevrangebyscore(key, max, min, withscores, offset, count))
 
     @classmethod
     @coroutine
