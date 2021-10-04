@@ -438,6 +438,15 @@ class RedisCache:
         with (yield from cls.get_pool()) as redis:
             return (yield from redis.zremrangebyscore(key, min, max, exclude))
 
+    @classmethod
+    @coroutine
+    def zcount(cls, key, namespace=None, min=float('-inf'), max=float('inf'), exclude=None):
+        # Count the members in a sorted set with scores within the given values.
+        if namespace is not None:
+            key = cls._get_key(namespace, key)
+        with (yield from cls.get_pool()) as redis:
+            return (yield from redis.zcount(key, min, max, exclude))
+
 class RedisCacheV2:
     _utf8 = 'utf-8'
 
