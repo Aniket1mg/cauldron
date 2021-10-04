@@ -447,6 +447,7 @@ class RedisCache:
         with (yield from cls.get_pool()) as redis:
             return (yield from redis.zcount(key, min, max, exclude))
 
+
 class RedisCacheV2:
     _utf8 = 'utf-8'
 
